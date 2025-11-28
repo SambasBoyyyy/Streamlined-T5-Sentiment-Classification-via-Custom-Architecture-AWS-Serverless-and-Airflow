@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment Variables
+.env
+
+# Project Specific
+.api_url
+.deployment.json
+mlruns/
+
+# Model Artifacts & Training Outputs
+t5-sst2-finetuned/
+test_trainer/
+*.tar.gz
+model/
+
+# Benchmark Results
+benchmark_results.json
+test_benchmark.json
+test_results_testsplit.json
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
