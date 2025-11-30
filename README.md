@@ -2,21 +2,48 @@
 
 This project implements an end-to-end MLOps pipeline for a custom **T5 Sentiment Analysis Model**. It features a specialized T5 Encoder with a "Sentiment Gate" architecture, deployed to **AWS SageMaker Serverless Inference**, and orchestrated by **Apache Airflow**.
 
-<!-- ![Architecture Diagram](assets/architecture_diagram.png) -->
+## 🧠 Model Architecture
 
-## 🚀 Key Features
+The core of this project is a custom `T5ForSentimentClassification` model that modifies the standard T5 architecture for efficient and interpretable binary sentiment classification.
 
-*   **Custom Model Architecture**: Modified T5 Encoder with a Gating Mechanism (`T5ForSentimentClassification`) to dynamically weight hidden states for binary sentiment classification (SST-2 dataset).
-*   **Serverless Deployment**: Deployed on **AWS SageMaker Serverless Inference** for cost-effective, on-demand scaling (pay-per-request).
-*   **API Gateway Integration**: Publicly accessible REST API via **AWS API Gateway** and **AWS Lambda**.
-*   **Automated MLOps**: Full pipeline orchestration using **Apache Airflow** in Docker, covering:
-    *   Data Validation
-    *   Model Training (with GPU support)
-    *   Evaluation
-    *   Model Packaging (`model.tar.gz`)
-    *   Deployment (SageMaker & API Gateway)
-    *   Endpoint Testing
-    *   Email Notifications
+<!-- ![Model Architecture](assets/architecture_diagram.png) -->
+
+### Key Components:
+1.  **T5 Encoder Backbone**: We use only the encoder part of `t5-small`. This reduces inference latency significantly compared to the full encoder-decoder architecture, as we don't need to generate text token-by-token.
+2.  **Sentiment Gate**: A learnable attention mechanism (Linear layer + Sigmoid) that assigns an "importance score" ($0$ to $1$) to each token's hidden state. This allows the model to focus on sentiment-bearing words (e.g., "loved", "terrible") while ignoring neutral ones.
+3.  **Weighted Pooling**: Instead of simple mean pooling, we compute a weighted sum of the encoder's hidden states using the gate scores.
+    $$ h_{pooled} = \frac{\sum (h_i \times g_i)}{\sum g_i} $$
+4.  **Classification Head**: A final dense layer maps the pooled representation to 2 classes (Negative/Positive).
+
+### Reinforcement Learning (RL) Optimization
+The model supports an optional RL training loop where the Gate is treated as a policy. It uses the **REINFORCE** algorithm to optimize the gate to maximize classification accuracy, encouraging it to select the most predictive tokens.
+
+---
+
+## 🔄 MLOps Pipeline
+
+The entire lifecycle of the model is automated using **Apache Airflow**, ensuring reproducibility and continuous delivery.
+
+![MLOps Pipeline](assets/pipeline_diagram.png)
+
+### Pipeline Steps:
+1.  **Check Data**: Validates that the SST-2 dataset is available and correctly formatted.
+2.  **Train / Check Model**:
+    *   Checks if a pre-trained model exists locally (hybrid workflow).
+    *   If not, triggers a training job (supports GPU acceleration).
+3.  **Evaluate**: Runs the model against the validation set to ensure performance metrics (Accuracy > 90%) are met.
+4.  **Package Model**: Compresses the model artifacts (`pytorch_model.bin`, `config.json`, `tokenizer`) and inference scripts (`inference.py`) into a `model.tar.gz` file compatible with SageMaker.
+5.  **Deploy to SageMaker**:
+    *   Uploads artifacts to S3.
+    *   Creates/Updates a **SageMaker Serverless Endpoint**.
+    *   Configures auto-scaling (0 to N instances).
+6.  **Create API Gateway**:
+    *   Deploys an **AWS Lambda** function to act as a proxy.
+    *   Sets up an **API Gateway** HTTP API to expose the model publicly.
+7.  **Test Endpoint**: Sends a test request ("I love this movie") to the live API to verify end-to-end functionality.
+8.  **Notify**: Sends an email alert upon success or failure.
+
+---
 
 ## 📂 Project Structure
 
@@ -32,10 +59,11 @@ t5-aws-mlops-pipeline/
 │   ├── create_api_gateway.py# API Gateway & Lambda setup
 │   └── package_model.py     # Artifact packaging
 ├── modules/                 # Core Model Code
-│   ├── models/              # Custom T5 Architecture
+│   ├── models/              # Custom T5 Architecture (t5_sentiment_gate.py)
 │   ├── data/                # Data processing (SST-2)
 │   └── training/            # Training loop
 ├── t5-classification/       # Model Artifacts (Local)
+├── assets/                  # Diagrams and images
 ├── train.py                 # Training entry point
 ├── evaluate.py              # Evaluation entry point
 └── requirements.txt         # Python dependencies
@@ -71,17 +99,10 @@ Access the Airflow UI at [http://localhost:8080](http://localhost:8080) (User/Pa
 ## 🏃‍♂️ Running the Pipeline
 
 1.  **Trigger DAG**: In the Airflow UI, find `t5_mlops_pipeline`, unpause it, and click the **Play** button.
-2.  **Workflow**:
-    *   **Check Data**: Verifies dataset availability.
-    *   **Check/Train Model**: Checks for a local model or trains a new one.
-    *   **Package Model**: Compresses artifacts into `model.tar.gz`.
-    *   **Deploy SageMaker**: Creates/Updates the Serverless Endpoint.
-    *   **Create API Gateway**: Sets up the public HTTP API.
-    *   **Test Endpoint**: Validates the live API.
+2.  **Monitor**: Watch the tasks turn green in the Graph view.
+3.  **Result**: You will receive an email notification, and your API will be live!
 
 ## 🔌 API Usage
-
-Once deployed, you can query the model via the API Gateway URL (found in the Airflow logs or AWS Console).
 
 **Endpoint**: `POST https://<api-id>.execute-api.us-east-1.amazonaws.com/predict`
 
@@ -99,17 +120,3 @@ Once deployed, you can query the model via the API Gateway URL (found in the Air
   "score": 0.98
 }
 ```
-
-## 🧠 Model Details
-
-The model uses a **T5-Small** encoder backbone. Instead of the standard decoder, it uses a custom **Sentiment Gate**:
-1.  **Encoder**: Processes input text into hidden states.
-2.  **Gate**: A learnable attention mechanism that weights the importance of each token's hidden state.
-3.  **Classifier**: A dense layer that takes the weighted average of hidden states to predict sentiment (0 or 1).
-
-## ☁️ AWS Architecture
-
-*   **SageMaker**: Hosts the model artifacts in a serverless container.
-*   **Lambda**: Acts as a proxy, receiving API requests and invoking the SageMaker endpoint.
-*   **API Gateway**: Provides the public HTTP interface.
-*   **S3**: Stores model artifacts (`model.tar.gz`).
