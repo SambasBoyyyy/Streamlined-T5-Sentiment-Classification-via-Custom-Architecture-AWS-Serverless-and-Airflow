@@ -163,3 +163,9 @@ Access the Airflow UI at [http://localhost:8080](http://localhost:8080) (User/Pa
   "score": 0.98
 }
 ```
+
+```bash
+curl --location 'https://2ssx8bnfcf.execute-api.us-east-1.amazonaws.com/predict' \
+--header 'Content-Type: application/json' \
+--data '{"text": "The visual effects were stunning, but the plot was boring."}'
+```
